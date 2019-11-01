@@ -1,5 +1,8 @@
 #include "network.h"
 #include "random.h"
+#include <map>
+#include <iostream>
+#include <utility>
 
 void Network::resize(const size_t &n, double inhib) {
     size_t old = size();
@@ -62,6 +65,34 @@ size_t Network::random_connect(const double &mean_deg, const double &mean_streng
     return num_links;
 }
 
+std::pair<size_t, double> Network::degree(const size_t& ind_neu) const {
+	size_t nb_conn(0);
+	double intensity_tot (0.0);
+	
+	std::map<std::pair<size_t, size_t>, double>::const_iterator itlow;
+	itlow=links.lower_bound({ind_neu, 0});
+	
+	for (auto I=itlow; I!=links.end() && I->first.first==ind_neu; I++) { 
+	++nb_conn;
+	intensity_tot+=I->second;
+    }
+ return {nb_conn, intensity_tot};
+}
+
+
+std::vector<std::pair<size_t, double> > Network::neighbors(const size_t& ind_neu) const {
+	
+	std::vector<std::pair<size_t, double> > neighbors_;
+	
+	std::map<std::pair<size_t, size_t>, double>::const_iterator itlow; 
+	itlow=links.lower_bound({ind_neu, 0});
+	
+	for (auto I=itlow; I!=links.end() && I->first.first==ind_neu; I++) { 
+		neighbors_.push_back({I->first.second, I->second});
+		 }                            
+	return neighbors_;
+}
+
 std::vector<double> Network::potentials() const {
     std::vector<double> vals;
     for (size_t nn=0; nn<size(); nn++)
@@ -75,6 +106,45 @@ std::vector<double> Network::recoveries() const {
         vals.push_back(neurons[nn].recovery());
     return vals;
 }
+
+
+std::set<size_t> Network::step(const std::vector<double>& vec) {
+	std::set<size_t> res;
+	double w(0.0);
+	double sum_ex(0.0);
+	double sum_inib(0.0);
+
+		for(size_t i(0); i<neurons.size(); ++i) {
+			if(neurons[i].firing()) {
+				neurons[i].reset();
+				res.insert(i);
+			}
+		}
+		
+		for(size_t i(0); i < neurons.size(); ++i) {
+			if(neurons[i].is_inhibitory()) {
+				w=0.4;
+				} else {
+				w=1.0;
+			}
+			std::vector<std::pair<size_t, double> > vois=neighbors(i);
+			for (auto voisin: vois) {
+				if(res.find(voisin.first) != res.end()) {
+					if (neurons[voisin.first].is_inhibitory()) {
+					sum_inib+= voisin.second;
+					}else{
+					sum_ex+= voisin.second;
+					}
+				}
+			}
+			neurons[i].input(w*vec[i] + 0.5*sum_ex + sum_inib);
+			sum_ex=0.0;
+			sum_inib=0.0;
+			neurons[i].step();
+		}
+	return res;
+}
+
 
 void Network::print_params(std::ostream *_out) {
     (*_out) << "Type\ta\tb\tc\td\tInhibitory\tdegree\tvalence" << std::endl;
